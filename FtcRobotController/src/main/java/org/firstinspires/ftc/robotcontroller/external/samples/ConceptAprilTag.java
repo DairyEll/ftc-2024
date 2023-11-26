@@ -33,9 +33,13 @@ import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 import android.util.Size;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
@@ -51,7 +55,6 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagGameDatabase;
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list.
  */
 @TeleOp(name = "Concept: AprilTag", group = "Concept")
-@Disabled
 public class ConceptAprilTag extends LinearOpMode {
 
     private static final boolean USE_WEBCAM = true;  // true for webcam, false for phone camera
@@ -78,8 +81,19 @@ public class ConceptAprilTag extends LinearOpMode {
         waitForStart();
 
         if (opModeIsActive()) {
-            while (opModeIsActive()) {
+            ExposureControl exposureControl1;
+            GainControl gainControl1;
+            exposureControl1 = visionPortal.getCameraControl(ExposureControl.class);
+            gainControl1 = visionPortal.getCameraControl(GainControl.class);
 
+            while (opModeIsActive()) {
+                if (exposureControl1.getMode() != ExposureControl.Mode.Manual) {
+                    exposureControl1.setMode(ExposureControl.Mode.Manual);
+                }
+                exposureControl1.setExposure(20, TimeUnit.MILLISECONDS);
+                gainControl1.setGain(200);
+                telemetry.addData("exposre", exposureControl1.getExposure(TimeUnit.MILLISECONDS));
+                telemetry.addData("gain", gainControl1.getGain());
                 telemetryAprilTag();
 
                 // Push telemetry to the Driver Station.
@@ -113,7 +127,7 @@ public class ConceptAprilTag extends LinearOpMode {
             //.setDrawCubeProjection(false)
             //.setDrawTagOutline(true)
             //.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
-            //.setTagLibrary(AprilTagGameDatabase.getCenterStageTagLibrary())
+            .setTagLibrary(AprilTagGameDatabase.getCenterStageTagLibrary())
             //.setOutputUnits(DistanceUnit.INCH, AngleUnit.DEGREES)
 
             // == CAMERA CALIBRATION ==
