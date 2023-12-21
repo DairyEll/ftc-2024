@@ -12,19 +12,19 @@ import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 import org.openftc.easyopencv.OpenCvPipeline;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class BluePropDetector extends OpenCvPipeline {
+    private final boolean DEBUG_MODE = true;
+
+    private int m_whichSide = 1; // 1=left, 2=right (default to be the left side)
+    private final double zoneRange_topFilter = 0.45;
+    private double m_zoneRange_split_leftSide = 0.58; // split it to left and right zones
+    private double m_zoneRange_split_rightSide = 0.36; // split it to left and right zones
+
+    private int m_signalNumber = 0;
+    public final int SIG_0_NONE = 0;
     public final int SIG_1_LEFT = 1;
     public final int SIG_2_MIDDLE = 2;
     public final int SIG_3_RIGHT = 3;
-    private final double zoneRange_split = 0.53; //0.32;
-    private final double zoneRange_topFilter = 0.42;
-    private final double zoneRange_bottomFilter = 0.27;
-    private int m_signalNumber = 0;
-    private int m_maxZoneArea = 0;
-    private final boolean DEBUG_MODE = true;
 
     private final Scalar RED = new Scalar(255, 0, 0);
     private final Scalar BLUE = new Scalar(0, 0, 255);
@@ -49,6 +49,28 @@ public class BluePropDetector extends OpenCvPipeline {
     public BluePropDetector(int width) {
         this.width = width;
     }
+    public void SetWhichSide(int whichSide, double zoneRange_split_leftSide, double zoneRange_split_rightSide) {
+//        m_zoneRange_split = zoneRange_split;
+        m_whichSide = whichSide;
+        m_zoneRange_split_leftSide = zoneRange_split_leftSide;
+        m_zoneRange_split_rightSide = zoneRange_split_rightSide;
+    }
+
+    private int whichZone(Point center, int radius, int filterLine_top, int splitLine_LeftRight) {
+        int zoneCode = 0;
+
+        // firstly check if the circle is beyond the range
+        // if ((center.y + radius) < filterLine_top)
+        if (center.y < filterLine_top)
+            zoneCode = SIG_0_NONE;
+        else {
+            if (center.x < splitLine_LeftRight)
+                zoneCode = SIG_1_LEFT;
+            else
+                zoneCode = SIG_3_RIGHT;
+        }
+        return(zoneCode);
+    }
 
     @Override
     public Mat processFrame(Mat input) {
@@ -58,13 +80,7 @@ public class BluePropDetector extends OpenCvPipeline {
         if (height == 0) height = input.height();
 
         // all the temporary shape related variables
-        Mat edges = null;
         Mat thresh = null;
-
-        Mat hierarchy = null;
-        MatOfPoint2f[] contoursPoly = null;
-        Rect[] boundRect = null;
-        List<MatOfPoint> contours = null;
 
         // Make a working copy of the input matrix in HSV
         if (m_mat != null) {
@@ -75,138 +91,92 @@ public class BluePropDetector extends OpenCvPipeline {
         m_mat = new Mat();
         Imgproc.cvtColor(input, m_mat, Imgproc.COLOR_RGB2HSV);
 
-        // get three zones
-        int line1 = (int)(input.width() * zoneRange_split);
-        // int line2 = (int)(input.width() * (1 - zoneRange_right));
-        int verticalFilterLine_top = (int)(input.height() * zoneRange_topFilter);
-        int verticalFilterLine_bottom = (int)(input.height() * (1-zoneRange_bottomFilter));
+        // get two zones
+        int splitLine_LeftRight = 0;
+        if (m_whichSide == 1) // left side
+            splitLine_LeftRight = (int)(input.width() * m_zoneRange_split_leftSide);
+        else
+            splitLine_LeftRight = (int)(input.width() * m_zoneRange_split_rightSide);
+
+        int filterLine_top = (int)(input.height() * zoneRange_topFilter);
 
         thresh = new Mat();
         Core.inRange(m_mat, lowHSV_2, highHSV_2, thresh);
 
-        // Use Canny Edge Detection to find edges, you might have to tune the thresholds for hysteresis
-        edges = new Mat();
-        Imgproc.Canny(thresh, edges, 100, 300);
+        // detect circle
+        Mat gray = new Mat();
+        Mat circles = new Mat();
+        Point center = null;
 
-        // https://docs.opencv.org/3.4/da/d0c/tutorial_bounding_rects_circles.html
-        // Oftentimes the edges are disconnected. findContours connects these edges.
-        contours = new ArrayList<>();
-        hierarchy = new Mat();
-        Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        boundRect = new Rect[contours.size()];
-        contoursPoly = new MatOfPoint2f[contours.size()];
-
-        int maxWidth = 0;
-        int maxHeight = 0;
-
-        for (int i = 0; i < contours.size(); i++) {
-            contoursPoly[i] = new MatOfPoint2f();
-            Imgproc.approxPolyDP(new MatOfPoint2f(contours.get(i).toArray()), contoursPoly[i], 3, true);
-            boundRect[i] = Imgproc.boundingRect(new MatOfPoint(contoursPoly[i].toArray()));
-            maxWidth = Math.max(maxWidth, boundRect[i].width);
-            maxHeight = Math.max(maxHeight, boundRect[i].height);
-        }
+        Imgproc.cvtColor(input, gray, Imgproc.COLOR_BGR2GRAY);
+        Imgproc.medianBlur(gray, gray, 5);
+        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.0,
+                (double)gray.rows()/16, // minDist – Minimum distance between the centers of the detected circles.
+                // change this value to detect circles with different distances to each other
+                50, //param1 – First method-specific parameter. In case of #HOUGH_GRADIENT, it is the higher threshold of the two passed to the Canny edge detector (the lower one is twice smaller).
+                30, //param2 – Second method-specific parameter.
+                12, //minRadius – Minimum circle radius.
+                40); //maxRadius – Maximum circle radius.
+        // 100.0, 30.0, 10, 30); // change the last two parameters (min_radius & max_radius) to detect larger circles
+        // 30,30,20,35); //zone 1
+//                 50,30,14,35); //zone 2
+        // 50,30,15,40); //zone 3
+//                28.0,30.0,15,40); //11.26
 
         if (DEBUG_MODE && telemetry != null) {
-            telemetry.addData("input(width,height)=", "(%d, %d)", input.width(), input.height()); //input(width,height)= : (320, 180)
-            telemetry.addData("1 lines", "(%d)", line1);
-            telemetry.addData("verticalFilterLine_top", "(%d)", verticalFilterLine_top);
-            telemetry.addData("verticalFilterLine_bottom", "(%d)", verticalFilterLine_bottom);
-
-            telemetry.addData("maxWidth, maxHeight", "(%d, %d)", maxWidth, maxHeight);
-            telemetry.addData("===", "===") ;
+            telemetry.addData("circles.cols()=", circles.cols());
+            telemetry.addData("filterLine_top=", filterLine_top);
+            telemetry.addData("splitLine_LeftRight=", splitLine_LeftRight);
+            // telemetry.addData("minDist=", "%4.2f", (double)gray.rows()/16);
         }
 
-        int leftZoneArea = 0;
-        // int middleZoneCnt = 0;
-        int rightZoneArea = 0;
-        int tmpArea = 0;
-
-        // ok, we've got the contours. let's check the shape
-        int counter = 0;
-        for (int i = 0; i != boundRect.length; i++)
-        {
-            if ((boundRect[i].x + boundRect[i].width) < line1) {
-
-                tmpArea = getAreaAfterFilter(boundRect[i], verticalFilterLine_top,verticalFilterLine_bottom);
-                leftZoneArea += tmpArea;
+        for (int x = 0; x < circles.cols(); x++) {
+            double[] c = circles.get(0, x);
+            center = new Point(Math.round(c[0]), Math.round(c[1]));
+            int radius = (int) Math.round(c[2]);
+            if (DEBUG_MODE && telemetry != null) {
+                telemetry.addData("==>", "found a circle (%4.2f, %4.2f) radius=%d", center.x, center.y, radius) ;
             }
-            else if (boundRect[i].x >= line1){
-                tmpArea = getAreaAfterFilter(boundRect[i], verticalFilterLine_top,verticalFilterLine_bottom);
-                rightZoneArea += tmpArea;
+            m_signalNumber = whichZone(center, radius, filterLine_top, splitLine_LeftRight);
+            if (SIG_0_NONE == m_signalNumber)
+            { // beyond the range
+                // circle it in Blue
+                Imgproc.circle(m_mat, center, 1,BLUE, 3, 8, 0 );
+                Imgproc.circle(m_mat, center, radius, BLUE, 2, 8, 0 );
             }
-            else //if (boundRect[i].x >= line_mid_1 && boundRect[i].x <= line_mid_2)
-            {
-                // middleZoneCnt += boundRect[i].width * boundRect[i].height;
-                tmpArea = getAreaAfterFilter(boundRect[i], verticalFilterLine_top, verticalFilterLine_bottom);
-                leftZoneArea += tmpArea;
+            else
+            { // this is a good one
+                // circle it in Red
+                Imgproc.circle(m_mat, center, 1,RED, 3, 8, 0 );
+                Imgproc.circle(m_mat, center, radius, RED, 2, 8, 0 );
+                break;
             }
-//
-//            if (boundRect[i].x < line1) {
-//                tmpArea = getAreaAfterFilter(boundRect[i], verticalFilterLine_top);
-//                leftZoneArea += tmpArea;
-//            }else{
-//                tmpArea = getAreaAfterFilter(boundRect[i], verticalFilterLine_top);
-//                rightZoneArea += tmpArea;
-//            }
-
-            if (DEBUG_MODE) {
-                if (tmpArea == 0)
-                    Imgproc.rectangle(m_mat, boundRect[i], BLUE, 1);
-                else
-                    Imgproc.rectangle(m_mat, boundRect[i], RED, 1);
-            }
-
-            if (DEBUG_MODE && telemetry != null)
-            {
-                telemetry.addData("boundRect(x,y)", "(%d, %d)", boundRect[i].x, boundRect[i].y);
-                telemetry.addData("boundRect(width, height)", "(%d, %d)", boundRect[i].width, boundRect[i].height);
-                telemetry.addData("(leftZoneArea,rightZoneArea) =", "(%d, %d)", leftZoneArea,rightZoneArea);
-                telemetry.addData("====", "====");
-            }
-
         }
-        if (DEBUG_MODE && telemetry != null) {
-            telemetry.addData("(leftZoneArea,rightZoneArea) =", "(%d, %d)", leftZoneArea,rightZoneArea);
+        if (gray != null) {
+            gray.release();
+            gray = null;
         }
-
-        m_maxZoneArea = leftZoneArea;
-        m_maxZoneArea = Math.max(m_maxZoneArea,rightZoneArea);
+        if (circles != null) {
+            circles.release();
+            circles = null;
+        }
 
         String str = "";
 
-        if (leftZoneArea == m_maxZoneArea)
-        {
-            m_signalNumber = SIG_1_LEFT;
-            str = "Left";        }
-        else
-        { //if can't see the left, it must be right
-            m_signalNumber = SIG_3_RIGHT;
+        if (m_signalNumber == SIG_1_LEFT)
+            str = "Left";
+        else if (m_signalNumber == SIG_3_RIGHT)
             str = "Right";
-        }
+        else
+            str = "None";
 
-        //Adding text to the image
-        int scale = 1;
-        int thickness = 2;
-        Imgproc.putText(m_mat, str, new Point(120, 40), Imgproc.FONT_HERSHEY_SIMPLEX, scale, RED, thickness);
+        // Adding text to the image
+        Imgproc.putText(m_mat, str, new Point(120, 40), Imgproc.FONT_HERSHEY_SIMPLEX, 1, RED, 2);
 
         if (telemetry != null) {
             telemetry.addData("Signal number", m_signalNumber);
             telemetry.update();
             telemetry = null;
-        }
-        if (edges != null) {
-            edges.release();
-            edges = null;
-        }
-        if (contours != null) {
-            contours = null;
-        }
-        if (contoursPoly != null) contoursPoly = null;
-        if (hierarchy != null) {
-            hierarchy.release();
-            hierarchy = null;
         }
         if (thresh != null) {
             thresh.release();
@@ -215,54 +185,7 @@ public class BluePropDetector extends OpenCvPipeline {
 
         return m_mat;
     }
-    private int getAreaAfterFilter(Rect rect, int verticalFilterLineTop, int verticalFilterLineBottom){
-        int retRectArea = 0;
-        if (rect.width == 1 || rect.height == 1)
-            return retRectArea;
 
-        if (rect.width > 10*rect.height)
-            return retRectArea;
-
-        // case 1
-        if (rect.y + rect.height <= verticalFilterLineTop) {
-            retRectArea = 0;
-        }
-        else if (rect.y >= verticalFilterLineBottom) {
-            //case 2
-            retRectArea = 0;
-        }
-        else if((rect.y >= verticalFilterLineTop) && (rect.y + rect.height) <= verticalFilterLineBottom) {
-            //case 3
-            retRectArea = rect.width * rect.height; // fully counted
-        }
-        else if ((rect.y <= verticalFilterLineTop) && ((rect.y + rect.height) <= verticalFilterLineBottom)) {
-            // case 4
-            retRectArea = rect.width * (rect.y + rect.height - verticalFilterLineTop) ;
-        }
-        else if ((rect.y >= verticalFilterLineTop) && (rect.y <= verticalFilterLineBottom) && ((rect.y + rect.height) > verticalFilterLineBottom)) {
-            //case 5
-            retRectArea = rect.width * (verticalFilterLineBottom - rect.y);
-        }
-        else if ((rect.y < verticalFilterLineTop) && ((rect.y + rect.height)  > verticalFilterLineBottom)) {
-            //case 6
-            retRectArea = rect.width * (verticalFilterLineBottom - verticalFilterLineTop);
-        }
-//      if (rect.y >= verticalFilterLineTop){
-//        retRectArea = rect.width * rect.height;
-//      }
-//      else {
-//        if (rect.y + rect.height < verticalFilterLineTop) {
-//            retRectArea = 0;
-//        }
-//        else {
-//           retRectArea = rect.width * (rect.y + rect.height - verticalFilterLineTop);
-//        }
-//      }
-//
-        return retRectArea;
-
-    }
-    public int getMaxZoneArea() {return this.m_maxZoneArea;}
     public int getSignalNumber() {
         return this.m_signalNumber;
     }
@@ -270,6 +193,7 @@ public class BluePropDetector extends OpenCvPipeline {
         if (this.m_signalNumber == SIG_1_LEFT) return "SIG_1_LEFT";
         else if (this.m_signalNumber == SIG_2_MIDDLE) return "SIG_2_MIDDLE";
         else if (this.m_signalNumber == SIG_3_RIGHT) return "SIG_3_RIGHT";
+        else if (this.m_signalNumber == SIG_0_NONE) return "SIG_0_NONE";
         else return ("");
     }
 }

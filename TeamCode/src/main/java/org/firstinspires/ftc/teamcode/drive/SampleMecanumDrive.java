@@ -171,7 +171,6 @@ public class SampleMecanumDrive extends MecanumDrive {
         intake_pivotR.setPosition(0.07);
 
         deposit = hardwareMap.get(CRServo.class, "deposit");
-        deposit.setDirection(DcMotorEx.Direction.REVERSE);
 
 
 

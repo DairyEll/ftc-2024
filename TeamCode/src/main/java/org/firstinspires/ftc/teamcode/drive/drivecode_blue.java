@@ -8,6 +8,9 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.geometry.Pose2d;
 import com.arcrobotics.ftclib.controller.PIDController;
 import com.arcrobotics.ftclib.controller.PIDFController;
+import com.qualcomm.hardware.bosch.BHI260IMU;
+import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.bosch.BNO055IMUNew;
 import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevBlinkinLedDriver;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
@@ -55,10 +58,10 @@ public class drivecode_blue extends OpMode {
     final double MAX_AUTO_STRAFE= 0.5;   //  Clip the approach speed to this max value (adjust for your robot)
     final double MAX_AUTO_TURN  = 0.75;   //  Clip the turn speed to this max value (adjust for your robot)
 
-    private DcMotorEx front_left;
-    private DcMotorEx front_right;
-    private DcMotorEx back_left;
-    private DcMotorEx back_right;
+    private DcMotor front_left;
+    private DcMotor front_right;
+    private DcMotor back_left;
+    private DcMotor back_right;
 
     private PIDFController controller;
 
@@ -82,7 +85,7 @@ public class drivecode_blue extends OpMode {
 
     private DigitalChannel beambreakintake;
     private DigitalChannel beambreakouttake;
-    private IMU imufordrive;
+    private BNO055IMUNew imufordrive;
 
     private ElapsedTime deposittimer = new ElapsedTime();
     private ElapsedTime deposittimer1 = new ElapsedTime();
@@ -103,8 +106,8 @@ public class drivecode_blue extends OpMode {
     int Portal_1_View_ID;
     boolean USE_WEBCAM_2 = true;
     int Portal_2_View_ID;
-    private AprilTagProcessor aprilTag1;
-    private VisionPortal visionPortal1;
+//    private AprilTagProcessor aprilTag1;
+//    private VisionPortal visionPortal1;
     //AprilTagProcessor aprilTag2;
     //VisionPortal visionPortal2;
     private AprilTagDetection desiredTag1 = null;
@@ -121,6 +124,8 @@ public class drivecode_blue extends OpMode {
 
     boolean position_change = false;
     boolean lift_pressed_up = false;
+
+    boolean lift_pressed_up2 = false;
     boolean lift_pressed_down = false;
     //MecanumDrive mecanumDrive = new MecanumDrive(hardwareMap, new Pose2d(new Vector2d(10,10), 10));
     Vector<RevBlinkinLedDriver.BlinkinPattern> patterns = new Vector<RevBlinkinLedDriver.BlinkinPattern>(2,1);
@@ -134,6 +139,13 @@ public class drivecode_blue extends OpMode {
     private ElapsedTime intake_timer2 = new ElapsedTime();
 
     private ElapsedTime loading_timer = new ElapsedTime();
+    private ElapsedTime loading_timer2 = new ElapsedTime();
+    
+    private boolean intake_button_test1 = false;
+    private boolean intake_button_test2 = false;
+
+    private boolean intake_button_test3 = false;
+    private boolean intake_button_test4 = false;
 
 
 
@@ -142,7 +154,7 @@ public class drivecode_blue extends OpMode {
     public static double d = 0.0005;
     public static double f = 0.0003;
 
-
+    double intakeSpeed = 0;
 
     double power= 0;
     double yError = 0;
@@ -191,21 +203,21 @@ public class drivecode_blue extends OpMode {
 
     @Override
     public void init() {
-        List myPortalsList;
-        myPortalsList = JavaUtil.makeIntegerList(VisionPortal.makeMultiPortalView(2, VisionPortal.MultiPortalLayout.HORIZONTAL));
-        Portal_1_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, 0, false)).intValue();
-        Portal_2_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, 1, false)).intValue();
-        if (!april_made) {
-            aprilTag1 = new AprilTagProcessor.Builder()
-                    //.setLensIntrinsics(822.317f, 822.317f, 319.495f, 242.502f)
-                    .build();
-            visionPortal1 = new VisionPortal.Builder()
-                    .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
-                    .setCameraResolution(new Size(640, 480))
-                    .setStreamFormat(VisionPortal.StreamFormat.MJPEG)
-                    .addProcessor(aprilTag1)
-                    .setLiveViewContainerId(Portal_1_View_ID)
-                    .build();
+//        List myPortalsList;
+//        myPortalsList = JavaUtil.makeIntegerList(VisionPortal.makeMultiPortalView(2, VisionPortal.MultiPortalLayout.HORIZONTAL));
+//        Portal_1_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, 0, false)).intValue();
+//        Portal_2_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, 1, false)).intValue();
+//        if (!april_made) {
+//            aprilTag1 = new AprilTagProcessor.Builder()
+//                    //.setLensIntrinsics(822.317f, 822.317f, 319.495f, 242.502f)
+//                    .build();
+//            visionPortal1 = new VisionPortal.Builder()
+//                    .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+//                    .setCameraResolution(new Size(640, 480))
+//                    .setStreamFormat(VisionPortal.StreamFormat.MJPEG)
+//                    .addProcessor(aprilTag1)
+//                    .setLiveViewContainerId(Portal_1_View_ID)
+//                    .build();
 
 
 //            aprilTag2 = new AprilTagProcessor.Builder()
@@ -218,8 +230,8 @@ public class drivecode_blue extends OpMode {
 //                    .addProcessor(aprilTag2)
 //                    .setLiveViewContainerId(Portal_2_View_ID)
 //                    .build();
-            april_made = true;
-        }
+//            april_made = true;
+//        }
         myLocalizer = new StandardTrackingWheelLocalizer(hardwareMap, lastTrackingEncPositions, lastTrackingEncVels);
         if(!pose_reset) {
             if (PoseStorage.currentPose == null) {
@@ -251,10 +263,10 @@ public class drivecode_blue extends OpMode {
         back_right.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
         front_left.setDirection(DcMotorEx.Direction.REVERSE);
         back_left.setDirection(DcMotorEx.Direction.REVERSE);
-        front_left.setVelocity(0);
-        back_left.setVelocity(0);
-        front_right.setVelocity(0);
-        back_right.setVelocity(0);
+        front_left.setPower(0);
+        back_left.setPower(0);
+        front_right.setPower(0);
+        back_right.setPower(0);
 
 
         lift_right = hardwareMap.get(DcMotorEx.class, "rightlift");
@@ -297,7 +309,7 @@ public class drivecode_blue extends OpMode {
         ledDriver = hardwareMap.get(RevBlinkinLedDriver.class, "ledDriver");
         ledDriver.setPattern(RevBlinkinLedDriver.BlinkinPattern.ORANGE);
 
-        imufordrive = hardwareMap.get(IMU.class, "imu");
+        imufordrive = hardwareMap.get(BNO055IMUNew.class, "imu");
 
         beambreakintake = hardwareMap.get(DigitalChannel.class, "beambreakintake");
         beambreakintake.setMode(DigitalChannel.Mode.INPUT);
@@ -332,7 +344,7 @@ public class drivecode_blue extends OpMode {
 //            gainControl.setGain(250);
 
 
-        telemetry.addData("cam1 ", visionPortal1.getCameraState());
+//        telemetry.addData("cam1 ", visionPortal1.getCameraState());
         //telemetry.addData("cam2 ", visionPortal2.getCameraState());
         telemetry.update();
         telemetrydash.update();
@@ -340,8 +352,9 @@ public class drivecode_blue extends OpMode {
 
         //Without this, the REV Hub's orientation is assumed to be logo up / USB forward
         imufordrive.initialize(parameters);
-
         imufordrive.resetYaw();
+
+
         plane.setPosition(0);
         List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
         for (LynxModule hub : allHubs) {
@@ -369,26 +382,26 @@ public class drivecode_blue extends OpMode {
     public void loop() {
         targetfound1 = false;
         targetfound2 = false;
-        if(visionPortal1.getCameraState() == VisionPortal.CameraState.STREAMING/* || visionPortal2.getCameraState() == VisionPortal.CameraState.STREAMING*/) {
-            if (!exposure_set) {
-                exposureControl1 = visionPortal1.getCameraControl(ExposureControl.class);
-                gainControl1 = visionPortal1.getCameraControl(GainControl.class);
-//                exposureControl2 = visionPortal2.getCameraControl(ExposureControl.class);
-//                gainControl2 = visionPortal2.getCameraControl(GainControl.class);
-                if (exposureControl1.getMode() != ExposureControl.Mode.Manual) {
-                    exposureControl1.setMode(ExposureControl.Mode.Manual);
-                }
-                exposureControl1.setExposure(10, TimeUnit.MILLISECONDS);
-                gainControl1.setGain(200);
-
-//                if (exposureControl2.getMode() != ExposureControl.Mode.Manual) {
-//                    exposureControl2.setMode(ExposureControl.Mode.Manual);
+//        if(visionPortal1.getCameraState() == VisionPortal.CameraState.STREAMING/* || visionPortal2.getCameraState() == VisionPortal.CameraState.STREAMING*/) {
+//            if (!exposure_set) {
+//                exposureControl1 = visionPortal1.getCameraControl(ExposureControl.class);
+//                gainControl1 = visionPortal1.getCameraControl(GainControl.class);
+////                exposureControl2 = visionPortal2.getCameraControl(ExposureControl.class);
+////                gainControl2 = visionPortal2.getCameraControl(GainControl.class);
+//                if (exposureControl1.getMode() != ExposureControl.Mode.Manual) {
+//                    exposureControl1.setMode(ExposureControl.Mode.Manual);
 //                }
-//                exposureControl2.setExposure(15, TimeUnit.MILLISECONDS);
-//                gainControl2.setGain(200);
-//                exposure_set = true;
-            }
-        }
+//                exposureControl1.setExposure(10, TimeUnit.MILLISECONDS);
+//                gainControl1.setGain(200);
+//
+////                if (exposureControl2.getMode() != ExposureControl.Mode.Manual) {
+////                    exposureControl2.setMode(ExposureControl.Mode.Manual);
+////                }
+////                exposureControl2.setExposure(15, TimeUnit.MILLISECONDS);
+////                gainControl2.setGain(200);
+////                exposure_set = true;
+//            }
+//        }
 
 
 //        if (lift_level > 0) {
@@ -403,59 +416,59 @@ public class drivecode_blue extends OpMode {
 //            }
 //        }
         //visionPortal2.stopStreaming();
-        if (visionPortal1.getCameraState() != VisionPortal.CameraState.CAMERA_DEVICE_READY) {
-            visionPortal1.stopStreaming();
-            //visionPortal2.stopStreaming();
-        }
+//        if (visionPortal1.getCameraState() != VisionPortal.CameraState.CAMERA_DEVICE_READY) {
+//            visionPortal1.stopStreaming();
+//            //visionPortal2.stopStreaming();
+//        }
 
 
         //gamepad1 code
 
 
         //drivetrain code
-        List<AprilTagDetection> currentDetections1 = aprilTag1.getDetections();
-        if (lift_level == 0) {
-            targetfound1 = false;
-            targetfound2 = false;
-            currentDetections1 = new ArrayList<AprilTagDetection>();
-        }
-        for (AprilTagDetection detection1 : currentDetections1) {
-            if ((detection1.metadata != null) &&
-                    (detection1.id == 1)) {
-                targetfound1 = true;
-                desiredTag1 = detection1;
-
-                break;  // don't look any further.
-            } else if ((detection1.metadata != null) &&
-                    (detection1.id == 2)) {
-                targetfound1 = true;
-                desiredTag1 = detection1;
-                break;  // don't look any further.
-            } else if ((detection1.metadata != null) &&
-                    (detection1.id == 3)) {
-                targetfound1 = true;
-                desiredTag1 = detection1;
-                break;  // don't look any further.
-            } else {
-                telemetry.addData("Unknown Target", "Tag ID %d is not in TagLibrary\n", detection1.id);
-
-
-            }
-        }
-        if (lift_level == 0) {
-            targetfound1 = false;
-            targetfound2 = false;
-        }
-
-        if (targetfound1) {
-            telemetry.addData(">", "HOLD Left-Bumper to Drive to Target\n");
-            telemetry.addData("Target", "ID %d (%s)", desiredTag1.id, desiredTag1.metadata.name);
-            telemetry.addData("x", "%5.1f inches", desiredTag1.ftcPose.x);
-            telemetry.addData("y", "%5.1f inches", desiredTag1.ftcPose.y * cam_multiplier);
-            telemetry.addData("Bearing", "%3.0f degrees", desiredTag1.ftcPose.bearing);
-            telemetry.addData("Yaw", "%3.0f degrees", desiredTag1.ftcPose.yaw);
-
-        }
+//        List<AprilTagDetection> currentDetections1 = aprilTag1.getDetections();
+//        if (lift_level == 0) {
+//            targetfound1 = false;
+//            targetfound2 = false;
+//            currentDetections1 = new ArrayList<AprilTagDetection>();
+//        }
+//        for (AprilTagDetection detection1 : currentDetections1) {
+//            if ((detection1.metadata != null) &&
+//                    (detection1.id == 1)) {
+//                targetfound1 = true;
+//                desiredTag1 = detection1;
+//
+//                break;  // don't look any further.
+//            } else if ((detection1.metadata != null) &&
+//                    (detection1.id == 2)) {
+//                targetfound1 = true;
+//                desiredTag1 = detection1;
+//                break;  // don't look any further.
+//            } else if ((detection1.metadata != null) &&
+//                    (detection1.id == 3)) {
+//                targetfound1 = true;
+//                desiredTag1 = detection1;
+//                break;  // don't look any further.
+//            } else {
+//                telemetry.addData("Unknown Target", "Tag ID %d is not in TagLibrary\n", detection1.id);
+//
+//
+//            }
+//        }
+//        if (lift_level == 0) {
+//            targetfound1 = false;
+//            targetfound2 = false;
+//        }
+//
+//        if (targetfound1) {
+//            telemetry.addData(">", "HOLD Left-Bumper to Drive to Target\n");
+//            telemetry.addData("Target", "ID %d (%s)", desiredTag1.id, desiredTag1.metadata.name);
+//            telemetry.addData("x", "%5.1f inches", desiredTag1.ftcPose.x);
+//            telemetry.addData("y", "%5.1f inches", desiredTag1.ftcPose.y * cam_multiplier);
+//            telemetry.addData("Bearing", "%3.0f degrees", desiredTag1.ftcPose.bearing);
+//            telemetry.addData("Yaw", "%3.0f degrees", desiredTag1.ftcPose.yaw);
+//
+//        }
 
 //        List<AprilTagDetection> currentDetections2 = aprilTag2.getDetections();
 //        if (lift_level == 0) {
@@ -516,6 +529,7 @@ public class drivecode_blue extends OpMode {
 
         if (gamepad1.back) {
             imufordrive.resetYaw();
+
         }
         if (botpose.getY() < 0) {
             board_pos = 0;
@@ -596,10 +610,10 @@ public class drivecode_blue extends OpMode {
             double leftBackPower = drive + strafe - turn;
             double rightBackPower = drive - strafe + turn;
 
-            front_left.setVelocity(2500 * leftFrontPower);
-            back_left.setVelocity(2500 * leftBackPower);
-            front_right.setVelocity(2500 * rightFrontPower);
-            back_right.setVelocity(2500 * rightBackPower);
+            front_left.setPower(2500 * leftFrontPower);
+            back_left.setPower(2500 * leftBackPower);
+            front_right.setPower(2500 * rightFrontPower);
+            back_right.setPower(2500 * rightBackPower);
 
             telemetry.addData("Auto", "Drive %5.2f, Strafe %5.2f, Turn %5.2f ", drive, strafe, turn);
         } else {
@@ -656,11 +670,17 @@ public class drivecode_blue extends OpMode {
             loadingback2 = false;
             depositloading = true;
             deposit.setPower(0.25);
+            loading_timer2.reset();
 
         } else if(!beambreakouttake.getState() && depositloading && !depositing){
             deposit.setPower(0);
             depositloading = false;
 
+        }else if (loading_timer2.seconds() > 1  && depositloading && !depositing){
+            loading_timer.reset();
+            depositloading = false;
+            loadingback2 = true;
+            deposit.setPower(-1);
         }else if (!depositing && !depositinghalf && !loading && !depositingback && !depositloading && !loadingback2) {
             deposit.setPower(0);
         }
@@ -712,7 +732,7 @@ public class drivecode_blue extends OpMode {
                 loading = false;
                 deposit.setPower(0);
                 loaded = true;
-            }else if (deposittimer2.seconds() > 3){
+            }else if (deposittimer2.seconds() > 2){
                 if(!loadingback) {
                     loadingback = true;
                     deposittimer3.reset();
@@ -744,26 +764,26 @@ public class drivecode_blue extends OpMode {
         }else if(lift_level > 0){
             intake_entrance.setPower(0);
             intake_pathway.setPower(0);
-            intake_pivotL.setPosition(0.07);
-            intake_pivotR.setPosition(0.07);
+//            intake_pivotL.setPosition(0.07);
+//            intake_pivotR.setPosition(0.07);
         }else if (pixel_count >=2){
             if(intake_timer2.seconds() > 1){
                 if (gamepad1.right_trigger > 0.3) {
                     intake_entrance.setPower(0);
                     intake_pathway.setPower(0);
-                    intake_pivotL.setPosition(0.07);
-                    intake_pivotR.setPosition(0.07);
+//                    intake_pivotL.setPosition(0.07);
+//                    intake_pivotR.setPosition(0.07);
                 } else if (gamepad1.left_trigger > 0.3) {
                     intake_timer.reset();
                     intake_entrance.setPower(0);
                     intake_pathway.setPower(-1);
-                    intake_pivotL.setPosition(0.07);
-                    intake_pivotR.setPosition(0.07);
+//                    intake_pivotL.setPosition(0.07);
+//                    intake_pivotR.setPosition(0.07);
                 } else {
                     intake_entrance.setPower(0);
                     intake_pathway.setPower(0);
-                    intake_pivotL.setPosition(0.07);
-                    intake_pivotR.setPosition(0.07);
+//                    intake_pivotL.setPosition(0.07);
+//                    intake_pivotR.setPosition(0.07);
 
                 }
             }else if (intake_timer2.seconds() > 0.5){
@@ -773,29 +793,29 @@ public class drivecode_blue extends OpMode {
             } else{
                 intake_entrance.setPower(-1);
                 intake_pathway.setPower(1);
-                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
-                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
             }
         }else{
-            intake_timer2.reset();
+            intake_timer2.reset(); 
             if (gamepad1.right_trigger > 0.3) {
                 intake_timer.reset();
-                intake_entrance.setPower(1);
+                intake_entrance.setPower(intakeSpeed);
                 intake_pathway.setPower(1);
-                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
-                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
             } else if (gamepad1.left_trigger > 0.3) {
                 intake_timer.reset();
                 intake_entrance.setPower(-1);
                 intake_pathway.setPower(-1);
-                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
-                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotL.setPosition(0.25 + 0.04166 * 3);
+//                intake_pivotR.setPosition(0.25 + 0.04166 * 3);
             } else {
                 intake_entrance.setPower(0);
                 intake_pathway.setPower(0);
                 if (intake_timer.seconds() > 1) {
-                    intake_pivotL.setPosition(0.06);
-                    intake_pivotR.setPosition(0.06);
+//                    intake_pivotL.setPosition(0.06);
+//                    intake_pivotR.setPosition(0.06);
                 }
             }
         }
@@ -826,6 +846,20 @@ public class drivecode_blue extends OpMode {
             lift_level = Range.clip(lift_level, 0, 9);
         }else if(!gamepad2.right_bumper && lift_pressed_up){
             lift_pressed_up = false;
+
+        }
+
+        if(gamepad2.left_trigger > 0.2 && !lift_pressed_up2){
+            if (lift_level == 0){
+                lift_slow = true;
+            }else {
+                lift_slow = false;
+            }
+            lift_pressed_up2 = true;
+            lift_level++;
+            lift_level = Range.clip(lift_level, 0, 9);
+        }else if(gamepad2.left_trigger < 0.2 && lift_pressed_up2){
+            lift_pressed_up2 = false;
 
         }
 
@@ -869,7 +903,7 @@ public class drivecode_blue extends OpMode {
             pid = controller.calculate(lift_right.getCurrentPosition(),1);
 
         }else {
-            pid = controller.calculate(lift_right.getCurrentPosition(),170 + lift_level*100 );
+            pid = controller.calculate(lift_right.getCurrentPosition(),180 + lift_level*80 );
 
         }
         power = pid;
@@ -1002,7 +1036,36 @@ public class drivecode_blue extends OpMode {
 //            patterns = new Vector<RevBlinkinLedDriver.BlinkinPattern>(2,0);
 //            ledDriver.setPattern(RevBlinkinLedDriver.BlinkinPattern.GOLD);
 //        }
+    
+        if (gamepad1.dpad_up && !intake_button_test1){
+            intake_button_test1 = true;
+            intake_pivotL.setPosition(intake_pivotL.getPosition() + 0.01);
+            intake_pivotR.setPosition(intake_pivotR.getPosition() + 0.01);
+        }else if (!gamepad1.dpad_up && intake_button_test1){
+            intake_button_test1 = false;
+        }
 
+        if (gamepad1.dpad_down && !intake_button_test2){
+            intake_button_test2 = true;
+            intake_pivotL.setPosition(intake_pivotL.getPosition() - 0.01);
+            intake_pivotR.setPosition(intake_pivotR.getPosition() - 0.01);
+        }else if (!gamepad1.dpad_down && intake_button_test2){
+            intake_button_test2 = false;
+        }
+
+        if (gamepad1.dpad_left && !intake_button_test3){
+            intake_button_test3 = true;
+            intakeSpeed+=0.05;
+        }else if (!gamepad1.dpad_left && intake_button_test3){
+            intake_button_test3 = false;
+        }
+
+        if (gamepad1.dpad_right && !intake_button_test4){
+            intake_button_test4 = true;
+            intakeSpeed-=0.05;
+        }else if (!gamepad1.dpad_right && intake_button_test4){
+            intake_button_test4 = false;
+        }
 
 
 
@@ -1029,7 +1092,7 @@ public class drivecode_blue extends OpMode {
         }else {
             telemetry.addData("beambreak outtake ", "closed");
         }
-        telemetry.addData("cam1 ", visionPortal1.getCameraState());
+//        telemetry.addData("cam1 ", visionPortal1.getCameraState());
         //telemetry.addData("cam2 ", visionPortal2.getCameraState());
         myLocalizer.update();
         telemetry.addData("pose",myLocalizer.getPoseEstimate());
